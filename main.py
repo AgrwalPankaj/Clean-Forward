@@ -1,63 +1,81 @@
 import os
 from pyrogram import Client, filters
 from pyrogram.types import Message
-from pyrogram.errors import PeerIdInvalid
+from pyrogram.errors import FloodWait
+import asyncio
 
-api_id = int(os.environ["API_ID"])
-api_hash = os.environ["API_HASH"]
-bot_token = os.environ["BOT_TOKEN"]
+API_ID = int(os.environ["API_ID"])
+API_HASH = os.environ["API_HASH"]
+BOT_TOKEN = os.environ["BOT_TOKEN"]
 
-app = Client("clean_forward_forceadd_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
+# Filled IDs
+SOURCE_CHAT_ID = -1002312779748
+DEST_CHAT_ID = -1002740358553
+GROUP_ID = -1002740358553
+MIN_MEMBERS_REQUIRED = 5
 
-# Source and destination for media forwarder
-SOURCE_CHAT_ID = -1002312779748  # Change as needed
-DEST_CHAT_ID = -1002740358553    # Your group
+app = Client("clean_forward_force_add_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Force Add Unlock Setup
-REQUIRED_ADDS = 5
-user_add_count = {}
-
+# ✅ Forward Media-Only
 @app.on_message(filters.chat(SOURCE_CHAT_ID))
-def media_forwarder(client, message: Message):
+async def forward_media_only(client: Client, message: Message):
     try:
         if message.media:
-            message.copy(DEST_CHAT_ID, caption="")
+            await message.copy(DEST_CHAT_ID, caption="")
+            print(f"Forwarded media: {message.message_id}")
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
     except Exception as e:
-        print("Media forward error:", e)
+        print("Forward Error:", e)
+
+# ✅ Force Add Unlock Logic
+user_data = {}
 
 @app.on_message(filters.new_chat_members)
-def welcome_new_users(client, message: Message):
-    for new_member in message.new_chat_members:
-        if new_member.is_bot:
+async def new_member(client, message: Message):
+    for user in message.new_chat_members:
+        if user.is_bot:
             continue
-        user_id = new_member.id
-        user_add_count[user_id] = 0  # reset or initialize
 
-        mention = f"[{new_member.first_name}](tg://user?id={user_id})"
-        welcome_text = (
-            f"🕉️ Ahem... Brahmāsmi.
-
-"
-            f"{mention},
-"
-            f"Jab tumne is mehfil mein kadam rakha,
-"
-            f"toh tumne ek daayra paar kiya.
-"
-            f"Yeh group nahi, yeh tapasya hai.
-"
-            f"Aur tapasya mein niyam todne wale ko shaanti nahi milti...
-"
-            f"sirf moksha milta hai — group se bahar ka moksha 🔕
-
-"
-            f"⚠️ To unlock the group, you must add **{REQUIRED_ADDS} members**.
-"
-            f"Jab tak sankhya poori nahi hoti, moksha nahi milega 🧿"
+        user_data[user.id] = set()
+        await message.reply_text(
+            f"🕉️ Ahem... Brahmāsmi.\n\n"
+            f"{user.first_name}, is daayre mein pravesh ke liye tumhe 5 sadasya laane honge.\n"
+            f"Jab tak tum yeh tapasya poori nahi karte, tum mukh bandh raho. 🔕\n\n"
+            f"➤ Add 5 members to unlock full access."
         )
-        try:
-            client.send_message(chat_id=user_id, text=welcome_text)
-        except PeerIdInvalid:
-            print("Failed to send DM to", user_id)
+        await app.restrict_chat_member(
+            chat_id=GROUP_ID,
+            user_id=user.id,
+            permissions={"can_send_messages": False}
+        )
+
+@app.on_message(filters.chat(GROUP_ID))
+async def track_adds(client, message: Message):
+    user = message.from_user
+    if not user or user.id not in user_data:
+        return
+
+    if message.new_chat_members:
+        for member in message.new_chat_members:
+            if not member.is_bot and member.id != user.id:
+                user_data[user.id].add(member.id)
+
+        if len(user_data[user.id]) >= MIN_MEMBERS_REQUIRED:
+            await app.restrict_chat_member(
+                chat_id=GROUP_ID,
+                user_id=user.id,
+                permissions={
+                    "can_send_messages": True,
+                    "can_send_media_messages": True,
+                    "can_send_other_messages": True,
+                    "can_add_web_page_previews": True,
+                }
+            )
+            await message.reply_text(
+                f"🔓 Tapasya poori hui!\n"
+                f"{user.first_name}, ab tum mukh khol sakte ho.\n"
+                f"Swagat hai Guruji ke daayre mein."
+            )
 
 app.run()
