@@ -1,56 +1,63 @@
 import os
-import asyncio
 from pyrogram import Client, filters
-from pyrogram.errors import FloodWait, RPCError
+from pyrogram.types import Message
+from pyrogram.errors import PeerIdInvalid
 
-API_ID = int(os.environ["API_ID"])
-API_HASH = os.environ["API_HASH"]
-BOT_TOKEN = os.environ["BOT_TOKEN"]
+api_id = int(os.environ["API_ID"])
+api_hash = os.environ["API_HASH"]
+bot_token = os.environ["BOT_TOKEN"]
 
-SOURCE_CHAT_ID = -1002312779748
-DESTINATION_CHAT_ID = -1002740358553
+app = Client("clean_forward_forceadd_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
+
+# Source and destination for media forwarder
+SOURCE_CHAT_ID = -1002312779748  # Change as needed
+DEST_CHAT_ID = -1002740358553    # Your group
+
+# Force Add Unlock Setup
 REQUIRED_ADDS = 5
-
-user_adds = {}
-
-app = Client("combined_forward_forceadd_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+user_add_count = {}
 
 @app.on_message(filters.chat(SOURCE_CHAT_ID))
-async def forward_media_only(client, message):
+def media_forwarder(client, message: Message):
     try:
         if message.media:
-            await message.copy(DESTINATION_CHAT_ID, caption="")
-            await asyncio.sleep(1.5)
-    except FloodWait as e:
-        await asyncio.sleep(e.value)
-        await message.copy(DESTINATION_CHAT_ID, caption="")
-    except RPCError as e:
-        print(f"Error forwarding message {message.message_id}: {e}")
+            message.copy(DEST_CHAT_ID, caption="")
+    except Exception as e:
+        print("Media forward error:", e)
 
 @app.on_message(filters.new_chat_members)
-async def handle_new_user(client, message):
-    new_user = message.new_chat_members[0].id
-    user_adds[new_user] = 0
-    await message.reply_text(
-        f"🕉️ Ahem... Brahmāsmi.
+def welcome_new_users(client, message: Message):
+    for new_member in message.new_chat_members:
+        if new_member.is_bot:
+            continue
+        user_id = new_member.id
+        user_add_count[user_id] = 0  # reset or initialize
 
-Welcome, {message.new_chat_members[0].mention}!
+        mention = f"[{new_member.first_name}](tg://user?id={user_id})"
+        welcome_text = (
+            f"🕉️ Ahem... Brahmāsmi.
 
 "
-        f"To unlock this sacred space, invite {REQUIRED_ADDS} members to this group.
+            f"{mention},
 "
-        f"Once done, your path to enlightenment (and chatting) shall be opened. 🧘‍♂️"
-    )
+            f"Jab tumne is mehfil mein kadam rakha,
+"
+            f"toh tumne ek daayra paar kiya.
+"
+            f"Yeh group nahi, yeh tapasya hai.
+"
+            f"Aur tapasya mein niyam todne wale ko shaanti nahi milti...
+"
+            f"sirf moksha milta hai — group se bahar ka moksha 🔕
 
-@app.on_message(filters.command("addcheck"))
-async def check_adds(client, message):
-    user_id = message.from_user.id
-    added = user_adds.get(user_id, 0)
-    remain = REQUIRED_ADDS - added
-    await message.reply_text(
-        f"🧮 You have added {added}/{REQUIRED_ADDS} members.
 "
-        f"{'✅ Access Granted!' if remain <= 0 else f'⏳ Add {remain} more to unlock group.'}"
-    )
+            f"⚠️ To unlock the group, you must add **{REQUIRED_ADDS} members**.
+"
+            f"Jab tak sankhya poori nahi hoti, moksha nahi milega 🧿"
+        )
+        try:
+            client.send_message(chat_id=user_id, text=welcome_text)
+        except PeerIdInvalid:
+            print("Failed to send DM to", user_id)
 
 app.run()
